@@ -206,7 +206,7 @@ SQL
 
     entries_of_friends = []
     #db.query('SELECT * FROM entries ORDER BY created_at DESC LIMIT 1000').each do |entry|
-    redis.zrangebyrank("entries_created_at", 0, 1000).each do |entry|
+    redis.zrangebyscore("entries_created_at", 0, +inf, limit: 1000).each do |entry|
       entry = symbolize_keys(JSON.parse(entry))
       next unless is_friend?(entry[:user_id])
       entry[:title] = entry[:body].split(/\n/).first
@@ -216,7 +216,7 @@ SQL
 
     comments_of_friends = []
     #db.query('SELECT * FROM comments ORDER BY created_at DESC LIMIT 1000').each do |comment|
-    redis.zrangebyrank("comments_created_at", 0, 1000).each do |comment|
+    redis.zrangebyscore("comments_created_at", +inf, limit: 1000).each do |comment|
       comment = symbolize_keys(JSON.parse(comment))
       next unless is_friend?(comment[:user_id])
       #entry = db.xquery('SELECT * FROM entries WHERE id = ?', comment["entry_id"]).first
@@ -229,7 +229,6 @@ SQL
 
     friends_query = 'SELECT * FROM relations WHERE one = ? OR another = ? ORDER BY created_at DESC'
     friends_map = {}
-    #db.xquery(friends_query, current_user[:id], current_user[:id]).each do |rel|
     db.xquery(friends_query, current_user[:id], current_user[:id]).each do |rel|
       # rel = symbolize_keys(JSON.parse(rel))
       key = (rel[:one] == current_user[:id] ? "another" : "one")
