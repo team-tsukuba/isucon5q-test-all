@@ -17,11 +17,8 @@ deploy:
 	make system-reload
 
 db_up:
-	/home/isucon/go/bin/goose up
+	/home/isucon/webapp/go/bin/goose up
 
 db_down:
-	/home/isucon/go/bin/goose down
-
-db_status:
-	/home/isucon/go/bin/goose status
+	/home/isucon/webapp/go/bin/goose down 
 
