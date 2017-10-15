@@ -11,6 +11,8 @@ require 'rack-mini-profiler'
 require 'rack-lineprof'
 require 'stackprof'
 
+require 'digest/sha2'
+
 
 module Isucon5
   class AuthenticationError < StandardError; end
@@ -65,6 +67,10 @@ class Isucon5::WebApp < Sinatra::Base
       client
     end
 
+    def redis
+      Thread.current[:redis] = Redis.new
+    end
+
     def authenticate(email, password)
       query = <<SQL
 SELECT u.id AS id, u.account_name AS account_name, u.nick_name AS nick_name, u.email AS email
@@ -99,6 +105,11 @@ SQL
         redirect '/login'
       end
     end
+
+    def symbolize_keys(hash)
+      hash.map{|k,v| [k.to_sym, v] }.to_h
+    end
+
 
     def get_user(user_id)
       user = db.xquery('SELECT * FROM users WHERE id = ?', user_id).first
@@ -194,7 +205,9 @@ SQL
     comments_for_me = db.xquery(comments_for_me_query, current_user[:id])
 
     entries_of_friends = []
-    db.query('SELECT * FROM entries ORDER BY created_at DESC LIMIT 1000').each do |entry|
+    #db.query('SELECT * FROM entries ORDER BY created_at DESC LIMIT 1000').each do |entry|
+    redis.zrangebyscore("entries_created_at", 0, +inf, limit: 1000).each do |entry|
+      entry = symbolize_keys(JSON.parse(entry))
       next unless is_friend?(entry[:user_id])
       entry[:title] = entry[:body].split(/\n/).first
       entries_of_friends << entry
@@ -202,9 +215,12 @@ SQL
     end
 
     comments_of_friends = []
-    db.query('SELECT * FROM comments ORDER BY created_at DESC LIMIT 1000').each do |comment|
+    #db.query('SELECT * FROM comments ORDER BY created_at DESC LIMIT 1000').each do |comment|
+    redis.zrangebyscore("comments_created_at", +inf, limit: 1000).each do |comment|
+      comment = symbolize_keys(JSON.parse(comment))
       next unless is_friend?(comment[:user_id])
-      entry = db.xquery('SELECT * FROM entries WHERE id = ?', comment[:entry_id]).first
+      #entry = db.xquery('SELECT * FROM entries WHERE id = ?', comment["entry_id"]).first
+      entry = symbolize_keys(JSON.parse(redis.get("entries#{comment[:entry_id]}")))
       entry[:is_private] = (entry[:private] == 1)
       next if entry[:is_private] && !permitted?(entry[:user_id])
       comments_of_friends << comment
@@ -214,7 +230,8 @@ SQL
     friends_query = 'SELECT * FROM relations WHERE one = ? OR another = ? ORDER BY created_at DESC'
     friends_map = {}
     db.xquery(friends_query, current_user[:id], current_user[:id]).each do |rel|
-      key = (rel[:one] == current_user[:id] ? :another : :one)
+      # rel = symbolize_keys(JSON.parse(rel))
+      key = (rel[:one] == current_user[:id] ? "another" : "one")
       friends_map[rel[key]] ||= rel[:created_at]
     end
     friends = friends_map.map{|user_id, created_at| [user_id, created_at]}
@@ -377,5 +394,52 @@ SQL
     db.query("DELETE FROM footprints WHERE id > 500000")
     db.query("DELETE FROM entries WHERE id > 500000")
     db.query("DELETE FROM comments WHERE id > 1500000")
+    redis.flushall
+
+    query = "SELECT * FROM entries"
+    db.query(query).map {|r|
+      redis.zadd("entries_created_at", -1 * r[:created_at].to_i, r.to_json)
+    }
+    # #db.query('SELECT * FROM entries ORDER BY created_at DESC LIMIT 1000').each do |entry|
+    # redis.zrangebyrank("entries_created_at", 0, 1000).each do |entry|
+    #   entry = JSON.parse(entry)
+    #   next unless is_friend?(entry["user_id"])
+    #   entry["title"] = entry["body"].split(/\n/).first
+    #   entries_of_friends << entry
+    #   break if entries_of_friends.size >= 10
+    # end
+
+
+    query = "SELECT * FROM comments"
+    db.query(query).map {|r|
+      redis.zset("comments_created_at", -1 * r[:created_at].to_i, r.to_json)
+    }
+
+    # comments_of_friends = []
+    # #db.query('SELECT * FROM comments ORDER BY created_at DESC LIMIT 1000').each do |comment|
+    # redis.zrangebyrank("comments_created_at", 0, 1000).each do |comment|
+    #   comment = JSON.parse(comment)
+    #   next unless is_friend?(comment["user_id"])
+    #   #entry = db.xquery('SELECT * FROM entries WHERE id = ?', comment["entry_id"]).first
+    #   entry = redis.get("entries", comment["entry_id"])
+    #   entry["is_private"] = (entry["private"] == 1)
+    #   next if entry["is_private"] && !permitted?(entry["user_id"])
+    #   comments_of_friends << comment
+    #   break if comments_of_friends.size >= 10
+    # end
+
+    # query = 'SELECT * FROM relations'
+    # db.query(query).map {|r|
+    #   redis.zset("friends_query_created_at:#{r[:one]}:#{r[:another]}", -1 * r[:created_at].to_i, r.to_json)
+    # }
+    #
+    # friends_query = 'SELECT * FROM relations WHERE one = ? OR another = ? ORDER BY created_at DESC'
+    # friends_map = {}
+    # #db.xquery(friends_query, current_user[:id], current_user[:id]).each do |rel|
+    # redis.zrangebyrank("friends_query_created_at:#{current_user[:id]}:#{current_user[:id]}".each do |rel|
+    #   rel = JSON.parse(rel)
+    #   key = (rel["one"] == current_user[:id] ? "another" : "one")
+    #   friends_map[rel[key]] ||= rel["created_at"]
+    # end
   end
 end
