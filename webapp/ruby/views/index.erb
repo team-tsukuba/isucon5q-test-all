@@ -30,8 +30,8 @@
     <div id="footprints">
       <ul class="list-group">
         <% footprints.each do |fp| %>
-        <% owner = get_user(fp[:owner_id]) %>
-        <li class="list-group-item footprints-footprint"><%= fp[:updated] %>: <a href="/profile/<%= owner[:account_name] %>"><%= owner[:nick_name] %>さん</a>
+        <% owner = get_user(fp['owner_id']) %>
+        <li class="list-group-item footprints-footprint"><%= fp['updated'] %>: <a href="/profile/<%= owner['account_name'] %>"><%= owner['nick_name'] %>さん</a>
         <% end %>
       </ul>
     </div>
@@ -45,10 +45,10 @@
     <% comments_for_me.each do |comment| %>
     <div class="comments-comment">
       <ul class="list-group">
-        <% comment_user = get_user(comment[:user_id]) %>
-        <li class="list-group-item comment-owner"><a href="/profile/<%= comment_user[:account_name] %>"><%= comment_user[:nick_name] %>さん</a>:
-        <li class="list-group-item comment-comment"><%= comment[:comment].size > 30 ? comment[:comment][0...27] + '...' : comment[:comment] %>
-        <li class="list-group-item comment-created-at">投稿時刻:<%= comment[:created_at] %>
+        <% comment_user = get_user(comment['user_id']) %>
+        <li class="list-group-item comment-owner"><a href="/profile/<%= comment_user['account_name'] %>"><%= comment_user[:nick_name] %>さん</a>:
+        <li class="list-group-item comment-comment"><%= comment['comment'].size > 30 ? comment['comment'][0...27] + '...' : comment['comment'] %>
+        <li class="list-group-item comment-created-at">投稿時刻:<%= comment['created_at'] %>
       </ul>
     </div>
     <% end %>
@@ -61,10 +61,10 @@
     <% entries_of_friends.each do |entry| %>
     <div class="friend-entry">
       <ul class="list-group">
-        <% entry_owner = get_user(entry[:user_id]) %>
+        <% entry_owner = get_user(entry['user_id']) %>
         <li class="list-group-item entry-owner"><a href="/diary/entries/<%= entry_owner[:account_name] %>"><%= entry_owner[:nick_name] %>さん</a>:
-        <li class="list-group-item entry-title"><a href="/diary/entry/<%= entry[:id] %>"><%= entry[:body].split(/\n/).first %></a>
-        <li class="list-group-item entry-created-at">投稿時刻:<%= entry[:created_at] %>
+        <li class="list-group-item entry-title"><a href="/diary/entry/<%= entry['id'] %>"><%= entry[:body].split(/\n/).first %></a>
+        <li class="list-group-item entry-created-at">投稿時刻:<%= entry['created_at'] %>
       </ul>
     </div>
     <% end %>
@@ -77,14 +77,14 @@
     <% comments_of_friends.each do |comment| %>
     <div class="friend-comment">
       <ul class="list-group">
-        <% comment_owner = get_user(comment[:user_id]) %>
-        <% entry = db.xquery('SELECT * FROM entries WHERE id=?', comment[:entry_id]).first %>
+        <% comment_owner = get_user(comment['user_id']) %>
+        <% entry = db.xquery('SELECT * FROM entries WHERE id=?', comment['entry_id']).first %>
         <% entry_owner = get_user(entry[:user_id]) %>
         <li class="list-group-item comment-from-to">
           <a href="/profile/<%= comment_owner[:account_name] %>"><%= comment_owner[:nick_name] %>さん</a>から
           <a href="/profile/<%= entry_owner[:account_name] %>"><%= entry_owner[:nick_name] %>さん</a>へのコメント:
-        <li class="list-group-item comment-comment"><%= comment[:comment].size > 30 ? comment[:comment][0...27] + '...' : comment[:comment] %>
-        <li class="list-group-item comment-created-at">投稿時刻:<%= comment[:created_at] %>
+        <li class="list-group-item comment-comment"><%= comment['comment'].size > 30 ? comment['comment'][0...27] + '...' : comment['comment'] %>
+        <li class="list-group-item comment-created-at">投稿時刻:<%= comment['created_at'] %>
       </ul>
     </div>
     <% end %>

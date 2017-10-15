@@ -47,6 +47,11 @@ class Isucon5::WebApp < Sinatra::Base
           password: ENV['ISUCON5_DB_PASSWORD'],
           database: ENV['ISUCON5_DB_NAME'] || 'isucon5q',
         },
+        redis: {
+          host: ENV['ISUCON5_REDIS_HOST'] || 'localhost',
+          port: ENV['ISUCON5_REDIS_PORT'] && ENV['ISUCON5_REDIS_PORT'].to_i,
+          socket: ENV['ISUCON5_REDIS_SOCKET'],
+        },
       }
     end
 
@@ -62,6 +67,13 @@ class Isucon5::WebApp < Sinatra::Base
       )
       client.query_options.merge!(symbolize_keys: true)
       Thread.current[:isucon5_db] = client
+      client
+    end
+
+    def redis
+      return Thread.current[:isucon5_redis] if Thread.current[:isucon5_redis]
+      client = config[:redis][:socket] ? Redis.new(:path => config[:redis][:socket]) : Redis.new(:host => config[:redis][:host], :port => config[:redis][:port])
+      Thread.current[:isucon5_redis] = client
       client
     end
 
@@ -183,6 +195,8 @@ SQL
     entries = db.xquery(entries_query, current_user[:id])
       .map{ |entry| entry[:is_private] = (entry[:private] == 1); entry[:title], entry[:content] = entry[:body].split(/\n/, 2); entry }
 
+
+=begin
     comments_for_me_query = <<SQL
 SELECT c.id AS id, c.entry_id AS entry_id, c.user_id AS user_id, c.comment AS comment, c.created_at AS created_at
 FROM comments c
@@ -228,7 +242,12 @@ ORDER BY updated DESC
 LIMIT 10
 SQL
     footprints = db.xquery(query, current_user[:id])
-
+=end
+    footprints = redis.zrange("footprints:user#{current_user[:id]}", 0, -1)
+    comments_for_me = redis.zrange("comments_for_me:user#{current_user[:id]}", 0, -1)
+    entries_of_friends = redis.zrange("entries_of_friends:user#{current_user[:id]}", 0, -1)
+    comments_of_friends = redis.zrange("comments_of_friends:user#{current_user[:id]}", 0, -1)
+    friends = redis.zrange("friends:user#{current_user[:id]}", 0, -1)
     locals = {
       profile: profile || {},
       entries: entries,
@@ -373,6 +392,75 @@ SQL
   end
 
   get '/initialize' do
+    
+    db.xquery('SELECT id FROM users').each do |u|
+      # footprintsのキャッシュ
+      query = <<SQL
+        SELECT user_id, owner_id, DATE(created_at) AS date, MAX(created_at) as updated
+        FROM footprints
+        WHERE user_id = ?
+        GROUP BY user_id, owner_id, DATE(created_at)
+        LIMIT 10
+      SQL
+      footprints = db.xquery(query, u[:id]).each do |c|
+        redis.zadd("footprints:user#{u[:id]}", -1*Time.parse(c[:updated]).to_i, c.to_json)
+      end
+
+      # comment_for_meのキャッシュ
+      comments_for_me_query = <<SQL
+        SELECT c.id AS id, c.entry_id AS entry_id, c.user_id AS user_id, c.comment AS comment, c.created_at AS created_at
+        FROM comments c
+        JOIN entries e ON c.entry_id = e.id
+        WHERE e.user_id = ?
+        LIMIT 10
+      SQL
+      comments_for_me = db.xquery(comments_for_me_query, u[:id]).each do |c|
+        redis.zadd("comments_for_me:user#{u[:id]}", -1*Time.parse(c[:created_at]).to_i, c.to_json)
+      end
+
+      is_friend? = ->(user_id, another_id) {
+        query = 'SELECT COUNT(1) AS cnt FROM relations WHERE (one = ? AND another = ?) OR (one = ? AND another = ?)'
+        cnt = db.xquery(query, user_id, another_id, another_id, user_id).first[:cnt]
+        cnt.to_i > 0 ? true : false
+      }
+
+      entries_of_friends = []
+      db.query('SELECT * FROM entries ORDER BY created_at DESC LIMIT 1000').each do |entry|
+        next unless is_friend?(u[:user_id], entry[:user_id])
+
+        entry[:title] = entry[:body].split(/\n/).first
+        entries_of_friends << entry
+        break if entries_of_friends.size >= 10
+      end
+      entries_of_friends.each do |e|
+        redis.zadd("entries_of_friends:user#{u[:id]}", -1*Time.parse(e[:created_at]).to_i, e.to_json)
+      end
+
+      comments_of_friends = []
+      db.query('SELECT * FROM comments ORDER BY created_at DESC LIMIT 1000 ').each do |comment|
+        next unless is_friend?(u[:user_id], comment[:user_id])
+  
+        entry = db.xquery('SELECT * FROM entries WHERE id = ?', comment[:entry_id]).first
+        entry[:is_private] = (entry[:private] == 1)
+  
+        another_id == current_user[:id] || is_friend?(u[:user_id], entry[:user_id])
+  
+        next if entry[:is_private] && !(another_id == current_user[:id] || is_friend?(u[:user_id], entry[:user_id]))
+        comments_of_friends << comment
+        break if comments_of_friends.size >= 10
+      end
+      comments_of_friends.each do |c|
+        redis.zadd("comments_of_friends:user#{u[:id]}", -1*Time.parse(c[:created_at]).to_i, c.to_json)
+      end
+
+      friends_query = 'SELECT * FROM relations WHERE one = ? OR another = ?'
+      friends_map = {}
+      db.xquery(friends_query, current_user[:id], current_user[:id]).each do |rel|
+        key = (rel[:one] == current_user[:id] ? :another : :one)
+        redis.zadd("friends:user#{u[:id]}", -1*Time.parse(rel[:created_at]).to_i, [rel[key], rel[:created_at]].to_json)
+      end
+    end
+
     db.query("DELETE FROM relations WHERE id > 500000")
     db.query("DELETE FROM footprints WHERE id > 500000")
     db.query("DELETE FROM entries WHERE id > 500000")
