@@ -10,6 +10,9 @@ gem "unicorn"
 gem 'redis'
 gem 'puma'
 
+# Redis
+gem 'redis'
+
 group :development do
   gem 'foreman'
   gem 'sinatra-contrib', require: nil
