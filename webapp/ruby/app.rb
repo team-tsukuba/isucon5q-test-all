@@ -4,6 +4,14 @@ require 'mysql2-cs-bind'
 require 'tilt/erubis'
 require 'erubis'
 
+require 'redis'
+require 'json'
+
+require 'rack-mini-profiler'
+require 'rack-lineprof'
+require 'stackprof'
+
+
 module Isucon5
   class AuthenticationError < StandardError; end
   class PermissionDenied < StandardError; end
@@ -23,6 +31,11 @@ class Isucon5::WebApp < Sinatra::Base
   #set :sessions, true
   set :session_secret, ENV['ISUCON5_SESSION_SECRET'] || 'beermoris'
   set :protection, true
+
+  configure :development do
+      use Rack::MiniProfiler
+      use Rack::Lineprof
+  end
 
   helpers do
     def config
